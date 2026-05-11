@@ -1,0 +1,17 @@
+node_modules/
+dist/
+
+# Sample/test data — not part of the source
+sample-data/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.*
+.claude/

@@ -1,0 +1,28 @@
+{
+  "name": "markit",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "organize": "tsx src/index.ts",
+    "test": "LOG_LEVEL=debug vitest run",
+    "test:local": "LOG_LEVEL=warn vitest run",
+    "test:watch": "LOG_LEVEL=warn vitest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.33.2",
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/node": "^25.6.2",
+    "pino-pretty": "^13.1.3",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.17",
+    "pino": "^10.3.1"
+  }
+}
