@@ -4,6 +4,9 @@ dist/
 # Sample/test data — not part of the source
 sample-data/
 
+# Proof of concept work
+poc/
+
 # macOS
 .DS_Store
 
