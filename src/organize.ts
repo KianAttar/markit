@@ -1,7 +1,105 @@
 import fs from "fs";
 import path from "path";
+import { createRequire } from "module";
+import mammoth from "mammoth";
 import { resolveZips, type FileMap } from "./unzip.js";
 import type { Logger } from "./logger.js";
+
+// pdf-parse v1 is CJS and has no ESM default export
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
+
+// Minimal RTF → text extractor for simple documents (e.g. Apple TextEdit output)
+function rtfToText(rtf: string): string {
+  let text = rtf;
+
+  // Strip metadata groups (font/color tables, stylesheet, info, pictures) with nested braces
+  text = stripGroups(text, ["fonttbl", "colortbl", "stylesheet", "info", "pict", "filetbl", "listtable"]);
+
+  // \'hh hex escapes
+  text = text.replace(/\\'([0-9a-fA-F]{2})/g, (_, hex) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
+
+  // \uNNNN? unicode escapes
+  text = text.replace(/\\u(-?\d+)\??/g, (_, num) => {
+    let code = parseInt(num, 10);
+    if (code < 0) code += 65536;
+    return String.fromCharCode(code);
+  });
+
+  // Common control words → whitespace
+  text = text.replace(/\\par\b/g, "\n");
+  text = text.replace(/\\line\b/g, "\n");
+  text = text.replace(/\\tab\b/g, "\t");
+
+  // Strip remaining control words (with optional numeric param and trailing space)
+  text = text.replace(/\\[a-zA-Z]+-?\d*\s?/g, "");
+
+  // Strip control symbols (\\, \{, \}, \*, etc.)
+  text = text.replace(/\\[^a-zA-Z]/g, "");
+
+  // Strip braces
+  text = text.replace(/[{}]/g, "");
+
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function stripGroups(rtf: string, names: string[]): string {
+  for (const name of names) {
+    const re = new RegExp(`\\{\\\\\\*?\\\\${name}\\b`);
+    let result = "";
+    let i = 0;
+    while (i < rtf.length) {
+      const match = rtf.slice(i).match(re);
+      if (!match || match.index === undefined) {
+        result += rtf.slice(i);
+        break;
+      }
+      result += rtf.slice(i, i + match.index);
+      // Find matching closing brace
+      let depth = 1;
+      let j = i + match.index + 1;
+      while (j < rtf.length && depth > 0) {
+        if (rtf[j] === "\\" && j + 1 < rtf.length) {
+          j += 2;
+          continue;
+        }
+        if (rtf[j] === "{") depth++;
+        else if (rtf[j] === "}") depth--;
+        j++;
+      }
+      i = j;
+    }
+    rtf = result;
+  }
+  return rtf;
+}
+
+async function convertToText(srcPath: string, destTxt: string, log: Logger): Promise<boolean> {
+  const ext = path.extname(srcPath).toLowerCase();
+  try {
+    let text: string;
+    if (ext === ".pdf") {
+      const buf = fs.readFileSync(srcPath);
+      const data = await pdfParse(buf);
+      text = data.text;
+    } else if (ext === ".docx") {
+      const result = await mammoth.extractRawText({ path: srcPath });
+      text = result.value;
+    } else if (ext === ".rtf") {
+      const buf = fs.readFileSync(srcPath, "utf8");
+      text = rtfToText(buf);
+    } else {
+      return false;
+    }
+    fs.writeFileSync(destTxt, text, "utf8");
+    return true;
+  } catch (err) {
+    log.warn({ srcPath, err }, "text extraction failed");
+    return false;
+  }
+}
 
 export function parseSubmissionFilename(filename: string): {
   studentName: string;
@@ -53,11 +151,11 @@ function sanitizeDirName(name: string): string {
   return name.replace(/[<>:"/\\|?*]/g, "_").trim();
 }
 
-export function organizeSubmissions(
+export async function organizeSubmissions(
   inputDir: string,
   logger: Logger,
   outputDir?: string
-): void {
+): Promise<void> {
   const log = logger.child({ component: "organize" });
   const inPlace = !outputDir;
   const resolvedInput = path.resolve(inputDir);
@@ -136,6 +234,14 @@ export function organizeSubmissions(
 
       log.debug({ studentName, file: relPath }, "file written");
       counts.filesWritten++;
+
+      // For PDF/DOCX/RTF, also drop a sibling .txt with extracted text so the
+      // annotation/summarize pipeline can read it.
+      const ext = path.extname(destPath).toLowerCase();
+      if (ext === ".pdf" || ext === ".docx" || ext === ".rtf") {
+        const txtPath = destPath.replace(new RegExp(`${ext}$`), ".txt");
+        await convertToText(destPath, txtPath, log);
+      }
     }
 
     cleanup();

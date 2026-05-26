@@ -9,4 +9,4 @@ if (args.length === 0) {
 
 const logger = createLogger();
 const [inputDir, outputDir] = args;
-organizeSubmissions(inputDir, logger, outputDir);
+await organizeSubmissions(inputDir, logger, outputDir);
