@@ -18,3 +18,5 @@ poc/
 .env
 .env.*
 .claude/
+
+workspace

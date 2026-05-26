@@ -1,16 +1,24 @@
 /**
  * markit-summarize-all — batch summarize all students in an organized-submissions folder.
  *
- *   tsx src/markit-summarize-all.ts <organized-submissions-dir> <base-mark>
- *
  * For each student subfolder, aggregates `[[ ... | -N ]]` deductions across all
  * `.cpp` and `.txt` files, rewrites each file with an updated inline summary block,
  * and writes a `report.md` with a per-file breakdown and final mark.
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { summarize, type SummaryResult } from "./markit-summarize.js";
+
+function walkAnnotatableFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkAnnotatableFiles(full));
+    else if (/\.(cpp|txt|html|css|js)$/i.test(entry.name)) out.push(full);
+  }
+  return out;
+}
 
 interface FileReport {
   file: string;
@@ -22,16 +30,12 @@ function summarizeStudent(
   studentDir: string,
   base: number
 ): { files: FileReport[]; total: number; final: number } {
-  const entries = readdirSync(studentDir);
-  const sources = entries
-    .filter((f) => f.endsWith(".cpp") || f.endsWith(".txt"))
-    .sort();
+  const sources = walkAnnotatableFiles(studentDir).sort();
 
-  const files: FileReport[] = sources.map((f) => {
-    const path = join(studentDir, f);
-    const source = readFileSync(path, "utf8");
+  const files: FileReport[] = sources.map((fullPath) => {
+    const source = readFileSync(fullPath, "utf8");
     const { next, result } = summarize(source, base);
-    return { file: f, result, next };
+    return { file: relative(studentDir, fullPath), result, next };
   });
 
   const total = files.reduce((sum, f) => sum + f.result.total, 0);
@@ -73,22 +77,7 @@ function renderReport(
   return lines.join("\n");
 }
 
-function main(): void {
-  const [, , submissionsDir, baseArg] = process.argv;
-
-  if (!submissionsDir || !baseArg) {
-    console.error(
-      "usage: tsx src/markit-summarize-all.ts <organized-submissions-dir> <base-mark>"
-    );
-    process.exit(1);
-  }
-
-  const base = Number(baseArg);
-  if (!Number.isFinite(base)) {
-    console.error(`base-mark must be a number, got: ${baseArg}`);
-    process.exit(1);
-  }
-
+export function runSummarizeAll(submissionsDir: string, base: number): void {
   const students = readdirSync(submissionsDir).filter((entry) =>
     statSync(join(submissionsDir, entry)).isDirectory()
   );
@@ -124,5 +113,3 @@ function main(): void {
     `${students.length} students processed  avg=${avg.toFixed(1)}  base=${base.toFixed(1)}`
   );
 }
-
-main();

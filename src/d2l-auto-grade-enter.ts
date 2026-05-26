@@ -1,141 +1,141 @@
-import { chromium } from "playwright";
+import { chromium, type Page, type Locator, type Frame } from "playwright";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import readline from "readline";
 
-// Usage: tsx src/d2l-auto-grade-enter.ts <marks.csv>
+// Direct translation of grade_enterer.py — same selectors, same flow.
 //
-// CSV format expected: fullName,finalMark
-// Launches a real Chromium window — log in manually, navigate to the D2L grade
-// list for the assignment, then press Enter to start automation.
-
-const csvPath = process.argv[2];
-if (!csvPath) {
-  console.error("usage: tsx src/d2l-auto-grade-enter.ts <marks.csv>");
-  process.exit(1);
-}
-
-const csvAbs = path.resolve(csvPath);
-if (!fs.existsSync(csvAbs)) {
-  console.error(`CSV not found: ${csvAbs}`);
-  process.exit(1);
-}
+// Usage: tsx src/cli.ts d2l-enter <marks.csv>
+// CSV columns expected: fullName,finalMark   (the marks.csv produced by `markit package-mark`)
 
 function prompt(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => rl.question(question, (ans) => { rl.close(); resolve(ans); }));
 }
 
-function loadGrades(filePath: string): Map<string, number> {
-  const lines = fs.readFileSync(filePath, "utf8").trim().split("\n");
-  const grades = new Map<string, number>();
-  for (const line of lines.slice(1)) {
+interface Record { fullName: string; finalMark: string; }
+
+function loadCsv(filePath: string): Record[] {
+  const text = fs.readFileSync(filePath, "utf8").trim();
+  const [, ...lines] = text.split(/\r?\n/);
+  const records: Record[] = [];
+  for (const line of lines) {
     const comma = line.lastIndexOf(",");
     if (comma === -1) continue;
-    const name = line.slice(0, comma).trim();
-    const mark = parseFloat(line.slice(comma + 1).trim());
-    if (name && Number.isFinite(mark)) grades.set(name, mark);
+    const fullName = line.slice(0, comma).trim();
+    const finalMark = line.slice(comma + 1).trim();
+    if (fullName) records.push({ fullName, finalMark });
   }
-  return grades;
+  return records;
 }
 
-// Build a regex that matches a student name allowing for optional comma/whitespace
-// between words (e.g. "Last, First" vs "First Last")
-function namePattern(fullName: string): RegExp {
-  const words = fullName.trim().split(/\s+/);
-  const pattern = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(",?\\s+");
-  return new RegExp(pattern, "i");
+// Python: `r",?\s+".join(re.escape(word) for word in student_name.split(" "))`
+function buildNamePattern(fullName: string): RegExp {
+  const words = fullName.split(" ").filter(Boolean);
+  const escaped = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(escaped.join(",?\\s+"), "i");
 }
 
-async function enterGrades(
-  page: import("playwright").Page,
-  grades: Map<string, number>
-): Promise<void> {
-  const iframeLocator = page.frameLocator("iframe.d2l-dialog-frame");
-
-  console.log("Waiting for grade table inside iframe...");
-  await iframeLocator.locator("tbody tr d2l-input-number").first().waitFor({ timeout: 30_000 });
-
-  const rows = iframeLocator.locator("tbody tr:has(d2l-input-number)");
-  const rowCount = await rows.count();
-  console.log(`Found ${rowCount} student rows.`);
-
-  const unmatched: number[] = [];
-
-  for (let i = 0; i < rowCount; i++) {
-    const row = rows.nth(i);
-    const rowText = (await row.innerText()).trim();
-
-    let matched = false;
-    for (const [name, mark] of grades) {
-      if (namePattern(name).test(rowText)) {
-        await setGrade(row, mark);
-        console.log(`  ✓ ${name} → ${mark}`);
-        grades.delete(name);
-        matched = true;
-        break;
-      }
-    }
-
-    if (!matched) {
-      unmatched.push(i);
-    }
-  }
-
-  for (const [name] of grades) {
-    console.warn(`  [warn] no row found for: ${name}`);
-  }
-
-  for (const i of unmatched) {
-    const row = rows.nth(i);
-    const rowText = (await row.innerText()).trim().slice(0, 80);
-    await setGrade(row, 0);
-    console.log(`  0 assigned to unmatched row: ${rowText}...`);
+// Python: driver.execute_script("arguments[0].click();", grade_component)
+//         grade_component.send_keys(str(grade_value))
+async function setGradeForRow(row: Locator, gradeValue: string): Promise<void> {
+  try {
+    const gradeComponent = row.locator("xpath=.//d2l-input-number").first();
+    // JS-click — bypasses Playwright actionability checks, matches execute_script
+    await gradeComponent.evaluate((el: Element) => (el as HTMLElement).click());
+    // send_keys on the web component itself (not the inner <input>)
+    await gradeComponent.pressSequentially(String(gradeValue));
+    const rowText = (await row.innerText()).trim().slice(0, 100);
+    console.log(`Entered grade ${gradeValue} for row: ${rowText}...`);
+  } catch (err) {
+    console.log("Error setting grade for a row:", err);
   }
 }
 
-async function setGrade(
-  row: import("playwright").Locator,
-  value: number
-): Promise<void> {
-  const component = row.locator("d2l-input-number").first();
-  await component.click();
-  // The web component exposes an inner <input> — fill that directly
-  const innerInput = component.locator("input");
-  await innerInput.fill(String(value));
-}
+export async function runD2lAutoGradeEnter(csvPath: string): Promise<void> {
+  const csvAbs = path.resolve(csvPath);
+  if (!fs.existsSync(csvAbs)) {
+    console.error(`CSV not found: ${csvAbs}`);
+    process.exit(1);
+  }
 
-async function main(): Promise<void> {
-  const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext();
-  const page = await context.newPage();
-
+  const userDataDir = path.join(os.homedir(), ".markit-d2l-profile");
+  const context = await chromium.launchPersistentContext(userDataDir, { headless: false });
+  const page: Page = context.pages()[0] ?? await context.newPage();
   await page.goto("https://d2l.langara.bc.ca/d2l/home");
 
   while (true) {
+    // Python: driver.get("https://d2l.langara.bc.ca/d2l/home")
+    await page.goto("https://d2l.langara.bc.ca/d2l/home");
     await prompt(
-      "\nLog in and navigate to the grade list for the assignment, then press Enter to continue..."
+      "If not already logged in, log in once (your session is saved). Then navigate to the grade list for the specific assignment and press Enter here to continue..."
     );
-    console.log("Proceeding with automation...");
+    console.log("proceeding with automation...");
 
-    const grades = loadGrades(csvAbs);
-    console.log(`Loaded ${grades.size} students from ${csvAbs}`);
+    // Python: pd.read_csv(path)  — using csvAbs passed in
+    const df = loadCsv(csvAbs);
 
-    try {
-      await enterGrades(page, grades);
-      console.log("\nGrade entry complete. Review the marks on the page before saving.");
-    } catch (err) {
-      console.error("Error during grade entry:", err);
+    // Python: WebDriverWait(driver, 10).until(presence_of_element_located(...))
+    //         driver.switch_to.frame(iframe)
+    const iframeElement = await page.waitForSelector(
+      "xpath=//iframe[contains(@class, 'd2l-dialog-frame')]",
+      { timeout: 10_000 }
+    );
+    const frame: Frame | null = await iframeElement.contentFrame();
+    if (!frame) {
+      console.error("Could not switch into d2l-dialog-frame iframe");
+      continue;
     }
 
-    const again = await prompt("\nEnter grades for another assignment? (y/N): ");
-    if (!again.trim().toLowerCase().startsWith("y")) {
-      console.log("Goodbye.");
+    // Python: driver.find_elements(By.XPATH, "//tbody/tr[.//d2l-input-number]")
+    const allRows = await frame.locator("xpath=//tbody/tr[.//d2l-input-number]").all();
+    console.log("Total student rows found:", allRows.length);
+
+    // Python: remaining_rows = list(all_rows)
+    const remainingRows = [...allRows];
+
+    // Python: for index, record in df.iterrows():
+    for (const record of df) {
+      const studentName = record.fullName.trim();
+      const gradeValue = record.finalMark;
+
+      const pattern = buildNamePattern(studentName);
+
+      let matchingRowIndex = -1;
+      for (let i = 0; i < remainingRows.length; i++) {
+        const rowText = (await remainingRows[i].innerText()).trim();
+        if (pattern.test(rowText)) {
+          matchingRowIndex = i;
+          break;
+        }
+      }
+
+      if (matchingRowIndex >= 0) {
+        await setGradeForRow(remainingRows[matchingRowIndex], gradeValue);
+        remainingRows.splice(matchingRowIndex, 1);
+      } else {
+        console.log(`Could not find a row for student: ${studentName}`);
+      }
+    }
+
+    // Python: for any rows left, assign 0
+    for (const row of remainingRows) {
+      await setGradeForRow(row, "0");
+      const rowText = (await row.innerText()).trim().slice(0, 100);
+      console.log("Assigned 0 to a leftover row:", rowText);
+    }
+
+    console.log("Grade entry complete. Please review the marks on the page.");
+    const command = await prompt("Do you have more grade to enter? (Y/N)");
+    if (command.toLowerCase().trim().charAt(0) !== "y") {
+      console.log("goodbye...");
       break;
     }
+
+    // Python: driver.switch_to.default_content()
+    // In Playwright we just re-acquire the frame next iteration via page.waitForSelector
   }
 
-  await browser.close();
+  await context.close();
 }
-
-main();

@@ -2,14 +2,13 @@
   "name": "markit",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/cli.ts",
   "type": "module",
+  "bin": {
+    "markit": "src/cli.ts"
+  },
   "scripts": {
-    "organize": "tsx src/index.ts",
-    "summarize-all": "tsx src/markit-summarize-all.ts",
-    "package-feedback": "tsx src/package-feedback.ts",
-    "package-mark": "tsx src/package-mark.ts",
-    "d2l-auto-grade-enter": "tsx src/d2l-auto-grade-enter.ts",
+    "markit": "tsx src/cli.ts",
     "test": "LOG_LEVEL=debug vitest run",
     "test:local": "LOG_LEVEL=warn vitest run",
     "test:watch": "LOG_LEVEL=warn vitest"
@@ -29,6 +28,7 @@
   },
   "dependencies": {
     "adm-zip": "^0.5.17",
+    "commander": "^14.0.3",
     "mammoth": "^1.12.0",
     "pdf-parse": "^1.1.4",
     "pino": "^10.3.1",
