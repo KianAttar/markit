@@ -6,19 +6,27 @@ import { runSummarizeAll } from "./markit-summarize-all.js";
 import { runPackageFeedback } from "./package-feedback.js";
 import { runPackageMark } from "./package-mark.js";
 import { runD2lAutoGradeEnter } from "./d2l-auto-grade-enter.js";
+import { runNewWorkspace } from "./new-workspace.js";
 
 const program = new Command();
 
 program
   .name("markit")
-  .description("CLI for organizing, annotating, packaging, and submitting student grades")
+  .description(
+    "CLI for organizing, annotating, packaging, and submitting student grades",
+  )
   .version("1.0.0");
 
 program
   .command("organize")
-  .description("Organize raw LMS submissions into per-student folders (expands zips, extracts text from PDF/DOCX/RTF)")
+  .description(
+    "Organize raw LMS submissions into per-student folders (expands zips, extracts text from PDF/DOCX/RTF)",
+  )
   .argument("<input-dir>", "directory containing raw submission files")
-  .argument("[output-dir]", "where to write organized folders (defaults to in-place)")
+  .argument(
+    "[output-dir]",
+    "where to write organized folders (defaults to in-place)",
+  )
   .action(async (inputDir: string, outputDir: string | undefined) => {
     const logger = createLogger();
     await organizeSubmissions(inputDir, logger, outputDir);
@@ -26,7 +34,9 @@ program
 
 program
   .command("summarize")
-  .description("Aggregate inline `[[ ... | -N ]]` annotations across all student folders and write per-student report.md")
+  .description(
+    "Aggregate inline `[[ ... | -N ]]` annotations across all student folders and write per-student report.md",
+  )
   .argument("<organized-dir>", "organized-submissions directory")
   .option("-b, --base <mark>", "base mark before deductions", "50")
   .action((organizedDir: string, opts: { base: string }) => {
@@ -40,9 +50,17 @@ program
 
 program
   .command("package-feedback")
-  .description("Zip each annotated student folder as '{id} - {name}.zip' and bundle into feedbacks.zip")
-  .argument("<submissions-dir>", "original LMS submissions directory (used to recover submission IDs)")
-  .argument("<organized-dir>", "organized-submissions directory with annotated files")
+  .description(
+    "Zip each annotated student folder as '{id} - {name}.zip' and bundle into feedbacks.zip",
+  )
+  .argument(
+    "<submissions-dir>",
+    "original LMS submissions directory (used to recover submission IDs)",
+  )
+  .argument(
+    "<organized-dir>",
+    "organized-submissions directory with annotated files",
+  )
   .option("-o, --out <dir>", "artifacts output directory", "artifacts")
   .action((subsDir: string, orgDir: string, opts: { out: string }) => {
     runPackageFeedback(subsDir, orgDir, opts.out);
@@ -50,9 +68,11 @@ program
 
 program
   .command("package-mark")
-  .description("Generate marks.csv (fullName,finalMark) from annotated student folders")
+  .description(
+    "Generate marks.csv (fullName,finalMark) from annotated student folders",
+  )
   .argument("<organized-dir>", "organized-submissions directory")
-  .option("-b, --base <mark>", "base mark before deductions", "50")
+  .requiredOption("-b, --base <mark>", "base mark before deductions", "50")
   .option("-o, --out <dir>", "artifacts output directory", "artifacts")
   .action((orgDir: string, opts: { base: string; out: string }) => {
     const base = Number(opts.base);
@@ -65,10 +85,22 @@ program
 
 program
   .command("d2l-enter")
-  .description("Automate grade entry into D2L Brightspace from a marks.csv (launches Chromium for manual login)")
+  .description(
+    "Automate grade entry into D2L Brightspace from a marks.csv (launches Chromium for manual login)",
+  )
   .argument("<csv>", "path to marks.csv with fullName,finalMark columns")
   .action(async (csv: string) => {
     await runD2lAutoGradeEnter(csv);
+  });
+
+program
+  .command("new-ws")
+  .description(
+    "Archive the current workspace and create a fresh empty one",
+  )
+  .argument("<archive-name>", "name for the archived workspace under archive/")
+  .action(async (archiveName: string) => {
+    await runNewWorkspace(archiveName);
   });
 
 program.parseAsync(process.argv);

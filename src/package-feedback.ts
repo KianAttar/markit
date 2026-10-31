@@ -37,6 +37,7 @@ export function runPackageFeedback(
 
   const entries = fs.readdirSync(subsDir);
   const studentZips: { name: string; buffer: Buffer }[] = [];
+  const zipped = new Set<string>();
   let skipped = 0;
 
   for (const filename of entries) {
@@ -61,6 +62,10 @@ export function runPackageFeedback(
     }
 
     const zipName = `${id} - ${name}.zip`;
+    // A student who uploaded more than once has several raw files that all parse
+    // to the same id+name; their annotated folder only needs zipping once.
+    if (zipped.has(zipName)) continue;
+    zipped.add(zipName);
     console.log(`  → ${zipName}`);
 
     const zip = new AdmZip();

@@ -1,16 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { summarize } from "./markit-summarize.js";
-
-function walkAnnotatableFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...walkAnnotatableFiles(full));
-    else if (/\.(cpp|txt|html|css|js)$/i.test(entry.name)) out.push(full);
-  }
-  return out;
-}
+import { walkAnnotatableFiles, listStudentDirs } from "./annotatable-files.js";
 
 // Writes a marks.csv to artifactsDir with header "fullName,finalMark" and one row
 // per student folder, computed from inline `[[ ... | -N ]]` annotations.
@@ -18,10 +9,7 @@ function walkAnnotatableFiles(dir: string): string[] {
 export function runPackageMark(orgDir: string, base: number, artifactsDir: string): void {
   fs.mkdirSync(artifactsDir, { recursive: true });
 
-  const students = fs
-    .readdirSync(orgDir)
-    .filter((e) => fs.statSync(path.join(orgDir, e)).isDirectory())
-    .sort();
+  const students = listStudentDirs(orgDir);
 
   const rows: string[] = ["fullName,finalMark"];
 

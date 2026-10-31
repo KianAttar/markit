@@ -1,24 +1,20 @@
 /**
  * markit-summarize-all — batch summarize all students in an organized-submissions folder.
  *
- * For each student subfolder, aggregates `[[ ... | -N ]]` deductions across all
- * `.cpp` and `.txt` files, rewrites each file with an updated inline summary block,
- * and writes a `report.md` with a per-file breakdown and final mark.
+ * For each student subfolder, aggregates `[[ ... | -N ]]` deductions across every
+ * annotatable source file (see ANNOTATABLE_RE — headers included, since some
+ * assignments are header-only), rewrites each file with an updated inline summary
+ * block, and writes a `report.md` with a per-file breakdown and final mark.
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { summarize, type SummaryResult } from "./markit-summarize.js";
-
-function walkAnnotatableFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...walkAnnotatableFiles(full));
-    else if (/\.(cpp|txt|html|css|js)$/i.test(entry.name)) out.push(full);
-  }
-  return out;
-}
+import {
+  walkAnnotatableFiles,
+  listStudentDirs,
+  REPORT_FILENAME,
+} from "./annotatable-files.js";
 
 interface FileReport {
   file: string;
@@ -78,9 +74,7 @@ function renderReport(
 }
 
 export function runSummarizeAll(submissionsDir: string, base: number): void {
-  const students = readdirSync(submissionsDir).filter((entry) =>
-    statSync(join(submissionsDir, entry)).isDirectory()
-  );
+  const students = listStudentDirs(submissionsDir);
 
   if (students.length === 0) {
     console.error(`no student folders found in: ${submissionsDir}`);
@@ -89,7 +83,7 @@ export function runSummarizeAll(submissionsDir: string, base: number): void {
 
   const results: Array<{ name: string; final: number }> = [];
 
-  for (const student of students.sort()) {
+  for (const student of students) {
     const studentDir = join(submissionsDir, student);
     const { files, total, final } = summarizeStudent(studentDir, base);
 
@@ -98,7 +92,7 @@ export function runSummarizeAll(submissionsDir: string, base: number): void {
     }
 
     const report = renderReport(student, files, base, total, final);
-    writeFileSync(join(studentDir, "report.md"), report);
+    writeFileSync(join(studentDir, REPORT_FILENAME), report);
 
     console.log(
       `${student.padEnd(30)} deductions=${total.toFixed(1).padStart(6)}  final=${final.toFixed(1)}`

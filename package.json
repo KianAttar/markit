@@ -9,9 +9,19 @@
   },
   "scripts": {
     "markit": "tsx src/cli.ts",
+    "organize": "tsx src/cli.ts organize raw-assignments workspace/subs",
+    "summarize": "tsx src/cli.ts summarize -b $(cat workspace/TOTAL_MARK) workspace/subs",
+    "feedback": "tsx src/cli.ts package-feedback -o workspace/artifacts raw-assignments workspace/subs",
+    "mark": "tsx src/cli.ts package-mark -b $(cat workspace/TOTAL_MARK) -o workspace/artifacts workspace/subs",
+    "d2l": "tsx src/cli.ts d2l-enter  workspace/artifacts/marks.csv",
+    "new-ws": "tsx src/cli.ts new-ws $(date +\"%Y-%m-%d_%H-%M-%S\")",
     "test": "LOG_LEVEL=debug vitest run",
     "test:local": "LOG_LEVEL=warn vitest run",
-    "test:watch": "LOG_LEVEL=warn vitest"
+    "test:watch": "LOG_LEVEL=warn vitest",
+    "clean-raw": "rm -rf raw-assignments/*",
+    "usage": "printf '\\n1: Run pnpm pre <submissions.zip>\\n2: Mark the submissions in the workspace folder (use markit skill with claude or whatever agent)\\n3: Run pnpm post and follow instructions to enter the mark and attach feedback\\n\\n'",
+    "pre": "sh -c 'rm -rf raw-assignments/* && mkdir -p raw-assignments && ditto -x -k \"$1\" raw-assignments && pnpm new-ws && pnpm organize' --",
+    "post": "pnpm summarize && pnpm feedback && pnpm mark && pnpm d2l"
   },
   "keywords": [],
   "author": "",

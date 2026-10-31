@@ -25,6 +25,7 @@ Markit expects files named in the following format:
 ```
 
 Example:
+
 ```
 552598-293497 - Festus Ayomike - May 8, 2026 1123 PM - lab1.cpp
 ```
@@ -47,4 +48,10 @@ Set `LOG_LEVEL` to control verbosity: `debug`, `info`, `warn`, or `error`. Defau
 
 ```bash
 LOG_LEVEL=debug pnpm organize submissions output
+```
+
+## Feedback Regex
+
+```
+\[\[.*\|.*-[\d.]+.*\]\]
 ```
